@@ -24,4 +24,6 @@ func VersionID(ctx netcontext.Context) string  { return appengine.VersionID(from
 func InstanceID() string                       { return appengine.InstanceID() }
 func IsDevAppServer() bool                     { return appengine.IsDevAppServer() }
 
-func fullyQualifiedAppID(ctx netcontext.Context) string { return fromContext(ctx).FullyQualifiedAppID() }
+func fullyQualifiedAppID(ctx netcontext.Context) string {
+	return fromContext(ctx).FullyQualifiedAppID()
+}

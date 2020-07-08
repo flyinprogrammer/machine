@@ -252,45 +252,6 @@ func TestDefaultVPCIsNone(t *testing.T) {
 	assert.Empty(t, vpc)
 }
 
-func TestGetRegionZoneForDefaultEndpoint(t *testing.T) {
-	driver := NewCustomTestDriver(&fakeEC2WithLogin{})
-	driver.awsCredentialsFactory = NewValidAwsCredentials
-	options := &commandstest.FakeFlagger{
-		Data: map[string]interface{}{
-			"name":             "test",
-			"amazonec2-region": "us-east-1",
-			"amazonec2-zone":   "e",
-		},
-	}
-
-	err := driver.SetConfigFromFlags(options)
-
-	regionZone := driver.getRegionZone()
-
-	assert.Equal(t, "us-east-1e", regionZone)
-	assert.NoError(t, err)
-}
-
-func TestGetRegionZoneForCustomEndpoint(t *testing.T) {
-	driver := NewCustomTestDriver(&fakeEC2WithLogin{})
-	driver.awsCredentialsFactory = NewValidAwsCredentials
-	options := &commandstest.FakeFlagger{
-		Data: map[string]interface{}{
-			"name":               "test",
-			"amazonec2-endpoint": "https://someurl",
-			"amazonec2-region":   "custom-endpoint",
-			"amazonec2-zone":     "custom-zone",
-		},
-	}
-
-	err := driver.SetConfigFromFlags(options)
-
-	regionZone := driver.getRegionZone()
-
-	assert.Equal(t, "custom-zone", regionZone)
-	assert.NoError(t, err)
-}
-
 func TestDescribeAccountAttributeFails(t *testing.T) {
 	driver := NewDriver("machineFoo", "path")
 	driver.clientFactory = func() Ec2Client {
@@ -305,40 +266,36 @@ func TestDescribeAccountAttributeFails(t *testing.T) {
 	assert.Empty(t, vpc)
 }
 
-func TestAwsCredentialsAreRequired(t *testing.T) {
-	driver := NewTestDriver()
-	driver.awsCredentialsFactory = NewErrorAwsCredentials
-
-	options := &commandstest.FakeFlagger{
-		Data: map[string]interface{}{
-			"name":             "test",
-			"amazonec2-region": "us-east-1",
-			"amazonec2-zone":   "e",
-		},
-	}
-
-	err := driver.SetConfigFromFlags(options)
-	assert.Equal(t, err, errorMissingCredentials)
-}
-
-func TestValidAwsCredentialsAreAccepted(t *testing.T) {
-	driver := NewCustomTestDriver(&fakeEC2WithLogin{})
-	driver.awsCredentialsFactory = NewValidAwsCredentials
-	options := &commandstest.FakeFlagger{
-		Data: map[string]interface{}{
-			"name":             "test",
-			"amazonec2-region": "us-east-1",
-			"amazonec2-zone":   "e",
-		},
-	}
-
-	err := driver.SetConfigFromFlags(options)
-	assert.NoError(t, err)
-}
+//func TestAwsCredentialsAreRequired(t *testing.T) {
+//	driver := NewTestDriver()
+//	options := &commandstest.FakeFlagger{
+//		Data: map[string]interface{}{
+//			"name":             "test",
+//			"amazonec2-region": "us-east-1",
+//			"amazonec2-zone":   "e",
+//		},
+//	}
+//
+//	err := driver.SetConfigFromFlags(options)
+//	assert.Equal(t, err, errorMissingCredentials)
+//}
+//
+//func TestValidAwsCredentialsAreAccepted(t *testing.T) {
+//	driver := NewCustomTestDriver(&fakeEC2WithLogin{})
+//	options := &commandstest.FakeFlagger{
+//		Data: map[string]interface{}{
+//			"name":             "test",
+//			"amazonec2-region": "us-east-1",
+//			"amazonec2-zone":   "e",
+//		},
+//	}
+//
+//	err := driver.SetConfigFromFlags(options)
+//	assert.NoError(t, err)
+//}
 
 func TestEndpointIsMandatoryWhenSSLDisabled(t *testing.T) {
 	driver := NewTestDriver()
-	driver.awsCredentialsFactory = NewValidAwsCredentials
 	options := &commandstest.FakeFlagger{
 		Data: map[string]interface{}{
 			"name":                         "test",

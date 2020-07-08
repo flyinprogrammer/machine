@@ -32,12 +32,11 @@ const (
 	ipRange                     = "0.0.0.0/0"
 	machineSecurityGroupName    = "docker-machine"
 	defaultAmiId                = "ami-c60b90d1"
-	defaultRegion               = "us-east-1"
 	defaultInstanceType         = "t2.micro"
 	defaultDeviceName           = "/dev/sda1"
+	defaultRegion               = "us-east-1"
 	defaultRootSize             = 16
 	defaultVolumeType           = "gp2"
-	defaultZone                 = "a"
 	defaultSecurityGroup        = machineSecurityGroupName
 	defaultSSHPort              = 22
 	defaultSSHUser              = "ubuntu"
@@ -63,15 +62,11 @@ var (
 
 type Driver struct {
 	*drivers.BaseDriver
-	clientFactory         func() Ec2Client
-	awsCredentialsFactory func() awsCredentials
-	Id                    string
-	AccessKey             string
-	SecretKey             string
-	SessionToken          string
-	Region                string
-	AMI                   string
-	SSHKeyID              int
+	clientFactory func() Ec2Client
+	Id            string
+	Region        string
+	AMI           string
+	SSHKeyID      int
 	// ExistingKey keeps track of whether the key was created by us or we used an existing one. If an existing one was used, we shouldn't delete it when the machine is deleted.
 	ExistingKey      bool
 	KeyName          string
@@ -97,7 +92,6 @@ type Driver struct {
 	IamInstanceProfile      string
 	VpcId                   string
 	SubnetId                string
-	Zone                    string
 	keyPath                 string
 	RequestSpotInstance     bool
 	SpotPrice               string
@@ -122,41 +116,14 @@ type clientFactory interface {
 func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 	return []mcnflag.Flag{
 		mcnflag.StringFlag{
-			Name:   "amazonec2-access-key",
-			Usage:  "AWS Access Key",
-			EnvVar: "AWS_ACCESS_KEY_ID",
-		},
-		mcnflag.StringFlag{
-			Name:   "amazonec2-secret-key",
-			Usage:  "AWS Secret Key",
-			EnvVar: "AWS_SECRET_ACCESS_KEY",
-		},
-		mcnflag.StringFlag{
-			Name:   "amazonec2-session-token",
-			Usage:  "AWS Session Token",
-			EnvVar: "AWS_SESSION_TOKEN",
-		},
-		mcnflag.StringFlag{
 			Name:   "amazonec2-ami",
 			Usage:  "AWS machine image",
 			EnvVar: "AWS_AMI",
 		},
 		mcnflag.StringFlag{
-			Name:   "amazonec2-region",
-			Usage:  "AWS region",
-			Value:  defaultRegion,
-			EnvVar: "AWS_DEFAULT_REGION",
-		},
-		mcnflag.StringFlag{
 			Name:   "amazonec2-vpc-id",
 			Usage:  "AWS VPC id",
 			EnvVar: "AWS_VPC_ID",
-		},
-		mcnflag.StringFlag{
-			Name:   "amazonec2-zone",
-			Usage:  "AWS zone for instance (i.e. a,b,c,d,e)",
-			Value:  defaultZone,
-			EnvVar: "AWS_ZONE",
 		},
 		mcnflag.StringFlag{
 			Name:   "amazonec2-subnet-id",
@@ -293,10 +260,8 @@ func NewDriver(hostName, storePath string) *Driver {
 	driver := &Driver{
 		Id:                   id,
 		AMI:                  defaultAmiId,
-		Region:               defaultRegion,
 		InstanceType:         defaultInstanceType,
 		RootSize:             defaultRootSize,
-		Zone:                 defaultZone,
 		SecurityGroupNames:   []string{defaultSecurityGroup},
 		SpotPrice:            defaultSpotPrice,
 		BlockDurationMinutes: defaultBlockDurationMinutes,
@@ -309,16 +274,12 @@ func NewDriver(hostName, storePath string) *Driver {
 	}
 
 	driver.clientFactory = driver.buildClient
-	driver.awsCredentialsFactory = driver.buildCredentials
-
 	return driver
 }
 
 func (d *Driver) buildClient() Ec2Client {
 	config := aws.NewConfig()
 	alogger := AwsLogger()
-	config = config.WithRegion(d.Region)
-	config = config.WithCredentials(d.awsCredentialsFactory().Credentials())
 	config = config.WithLogger(alogger)
 	config = config.WithLogLevel(aws.LogDebugWithHTTPBody)
 	config = config.WithMaxRetries(d.RetryCount)
@@ -326,11 +287,12 @@ func (d *Driver) buildClient() Ec2Client {
 		config = config.WithEndpoint(d.Endpoint)
 		config = config.WithDisableSSL(d.DisableSSL)
 	}
-	return ec2.New(session.New(config))
-}
-
-func (d *Driver) buildCredentials() awsCredentials {
-	return NewAWSCredentials(d.AccessKey, d.SecretKey, d.SessionToken)
+	sess, err := session.NewSession(config)
+	if err != nil {
+		panic(err)
+	}
+	d.Region = *sess.Config.Region
+	return ec2.New(sess)
 }
 
 func (d *Driver) getClient() Ec2Client {
@@ -340,20 +302,15 @@ func (d *Driver) getClient() Ec2Client {
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Endpoint = flags.String("amazonec2-endpoint")
 
-	region, err := validateAwsRegion(flags.String("amazonec2-region"))
-	if err != nil && d.Endpoint == "" {
-		return err
-	}
-
 	image := flags.String("amazonec2-ami")
 	if len(image) == 0 {
+		region := d.Region
+		if region == "" {
+			region = "us-east-1"
+		}
 		image = regionDetails[region].AmiId
 	}
 
-	d.AccessKey = flags.String("amazonec2-access-key")
-	d.SecretKey = flags.String("amazonec2-secret-key")
-	d.SessionToken = flags.String("amazonec2-session-token")
-	d.Region = region
 	d.AMI = image
 	d.RequestSpotInstance = flags.Bool("amazonec2-request-spot-instance")
 	d.SpotPrice = flags.String("amazonec2-spot-price")
@@ -364,8 +321,6 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.SecurityGroupNames = flags.StringSlice("amazonec2-security-group")
 	d.SecurityGroupReadOnly = flags.Bool("amazonec2-security-group-readonly")
 	d.Tags = flags.String("amazonec2-tags")
-	zone := flags.String("amazonec2-zone")
-	d.Zone = zone[:]
 	d.DeviceName = flags.String("amazonec2-device-name")
 	d.RootSize = int64(flags.Int("amazonec2-root-size"))
 	d.VolumeType = flags.String("amazonec2-volume-type")
@@ -394,10 +349,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 		return errorNoPrivateSSHKey
 	}
 
-	_, err = d.awsCredentialsFactory().Credentials().Get()
-	if err != nil {
-		return errorMissingCredentials
-	}
+	var err error
 
 	if d.VpcId == "" {
 		d.VpcId, err = d.getDefaultVPCId()
@@ -490,13 +442,8 @@ func (d *Driver) checkPrereqs() error {
 		// otherwise we found the key: success
 	}
 
-	regionZone := d.getRegionZone()
 	if d.SubnetId == "" {
 		filters := []*ec2.Filter{
-			{
-				Name:   aws.String("availability-zone"),
-				Values: []*string{&regionZone},
-			},
 			{
 				Name:   aws.String("vpc-id"),
 				Values: []*string{&d.VpcId},
@@ -511,7 +458,7 @@ func (d *Driver) checkPrereqs() error {
 		}
 
 		if len(subnets.Subnets) == 0 {
-			return fmt.Errorf("unable to find a subnet that is both in the zone %s and belonging to VPC ID %s", regionZone, d.VpcId)
+			return fmt.Errorf("unable to find a subnet belonging to VPC ID %s", d.VpcId)
 		}
 
 		d.SubnetId = *subnets.Subnets[0].SubnetId
@@ -632,7 +579,6 @@ func (d *Driver) innerCreate() error {
 		AssociatePublicIpAddress: aws.Bool(!d.PrivateIPOnly),
 	}}
 
-	regionZone := d.getRegionZone()
 	log.Debugf("launching instance in subnet %s", d.SubnetId)
 
 	var instance *ec2.Instance
@@ -640,10 +586,7 @@ func (d *Driver) innerCreate() error {
 	if d.RequestSpotInstance {
 		req := ec2.RequestSpotInstancesInput{
 			LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
-				ImageId: &d.AMI,
-				Placement: &ec2.SpotPlacement{
-					AvailabilityZone: &regionZone,
-				},
+				ImageId:           &d.AMI,
 				KeyName:           &d.KeyName,
 				InstanceType:      &d.InstanceType,
 				NetworkInterfaces: netSpecs,
@@ -721,12 +664,9 @@ func (d *Driver) innerCreate() error {
 		}
 	} else {
 		inst, err := d.getClient().RunInstances(&ec2.RunInstancesInput{
-			ImageId:  &d.AMI,
-			MinCount: aws.Int64(1),
-			MaxCount: aws.Int64(1),
-			Placement: &ec2.Placement{
-				AvailabilityZone: &regionZone,
-			},
+			ImageId:           &d.AMI,
+			MinCount:          aws.Int64(1),
+			MaxCount:          aws.Int64(1),
 			KeyName:           &d.KeyName,
 			InstanceType:      &d.InstanceType,
 			NetworkInterfaces: netSpecs,
@@ -1260,13 +1200,6 @@ func (d *Driver) getDefaultVPCId() (string, error) {
 	}
 
 	return "", errors.New("No default-vpc attribute")
-}
-
-func (d *Driver) getRegionZone() string {
-	if d.Endpoint == "" {
-		return d.Region + d.Zone
-	}
-	return d.Zone
 }
 
 func generateId() string {

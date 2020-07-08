@@ -56,7 +56,7 @@ func AuthenticatedClient(options gophercloud.AuthOptions) (*gophercloud.Provider
 // provided endpoint.
 func Authenticate(client *gophercloud.ProviderClient, options gophercloud.AuthOptions) error {
 	versions := []*utils.Version{
-		&utils.Version{ID: v20, Priority: 20, Suffix: "/v2.0/"},
+		{ID: v20, Priority: 20, Suffix: "/v2.0/"},
 	}
 
 	chosen, endpoint, err := utils.ChooseVersion(client, versions)

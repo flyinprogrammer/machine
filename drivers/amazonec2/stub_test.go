@@ -23,42 +23,16 @@ func (p *errorProvider) IsExpired() bool {
 	return true
 }
 
-type okProvider struct {
-	accessKeyID     string
-	secretAccessKey string
-	sessionToken    string
-}
-
-func (p *okProvider) Retrieve() (credentials.Value, error) {
-	return credentials.Value{
-		AccessKeyID:     p.accessKeyID,
-		SecretAccessKey: p.secretAccessKey,
-		SessionToken:    p.sessionToken,
-	}, nil
-}
-
-func (p *okProvider) IsExpired() bool {
-	return true
-}
-
 type fallbackCredentials struct{}
 
 func (c *fallbackCredentials) Credentials() *credentials.Credentials {
 	return credentials.NewStaticCredentials("fallback_access", "fallback_secret", "fallback_token")
 }
 
-func NewValidAwsCredentials() awsCredentials {
-	return &fallbackCredentials{}
-}
-
 type errorFallbackCredentials struct{}
 
 func (c *errorFallbackCredentials) Credentials() *credentials.Credentials {
 	return credentials.NewCredentials(&errorProvider{})
-}
-
-func NewErrorAwsCredentials() awsCredentials {
-	return &errorFallbackCredentials{}
 }
 
 type errorCredentialsProvider struct{}
