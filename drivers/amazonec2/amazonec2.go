@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -64,6 +65,8 @@ type Driver struct {
 	*drivers.BaseDriver
 	clientFactory func() Ec2Client
 	Id            string
+	Profile       string
+	LoadConfig    session.SharedConfigState
 	Region        string
 	AMI           string
 	SSHKeyID      int
@@ -280,6 +283,8 @@ func NewDriver(hostName, storePath string) *Driver {
 func (d *Driver) buildClient() Ec2Client {
 	config := aws.NewConfig()
 	alogger := AwsLogger()
+	// if region is set in config, force it for the config.
+	config = config.WithRegion(d.Region)
 	config = config.WithLogger(alogger)
 	config = config.WithLogLevel(aws.LogDebugWithHTTPBody)
 	config = config.WithMaxRetries(d.RetryCount)
@@ -287,11 +292,53 @@ func (d *Driver) buildClient() Ec2Client {
 		config = config.WithEndpoint(d.Endpoint)
 		config = config.WithDisableSSL(d.DisableSSL)
 	}
-	sess, err := session.NewSession(config)
+	config = config.WithCredentialsChainVerboseErrors(true)
+
+	opts := session.Options{}
+	opts.Config.MergeIn(config)
+
+	// we do all this profile and shared config leg work so that we don't have to
+	// specify these things again when using future commands, those commands should just work TM
+	profile, ok := os.LookupEnv("AWS_PROFILE")
+	if ok {
+		// even if there's an environment variable set, we'll ignore it in place of the one in the config
+		if d.Profile == "" {
+			d.Profile = profile
+		}
+	}
+	// In case you use aws-vault, we'll grab the profile from this environment variable.
+	profile, ok = os.LookupEnv("AWS_VAULT")
+	if ok {
+		// even if there's an environment variable set, we'll ignore it in place of the one in the config
+		if d.Profile == "" {
+			d.Profile = profile
+		}
+	}
+	opts.Profile = d.Profile
+
+	loadConfig, ok := os.LookupEnv("AWS_SDK_LOAD_CONFIG")
+	if ok {
+		// Sometimes this language is miserable...
+		loadInt, err := strconv.ParseBool(loadConfig)
+		if err != nil {
+			panic(err)
+		}
+		if loadInt {
+			d.LoadConfig = session.SharedConfigEnable
+		} else {
+			d.LoadConfig = session.SharedConfigDisable
+		}
+	}
+	opts.SharedConfigState = d.LoadConfig
+
+	sess, err := session.NewSessionWithOptions(opts)
 	if err != nil {
 		panic(err)
 	}
-	d.Region = *sess.Config.Region
+	// on the occasion region isn't set in the driver, snag it from our new ec2 session.
+	if d.Region == "" {
+		d.Region = *sess.Config.Region
+	}
 	return ec2.New(sess)
 }
 
@@ -305,8 +352,10 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	image := flags.String("amazonec2-ami")
 	if len(image) == 0 {
 		region := d.Region
+		// TODO: throw an error, region should really be set via credential provider
+		// 		 but we leave this here so tests pass.
 		if region == "" {
-			region = "us-east-1"
+			region = defaultRegion
 		}
 		image = regionDetails[region].AmiId
 	}
