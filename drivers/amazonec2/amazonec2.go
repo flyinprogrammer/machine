@@ -108,8 +108,7 @@ type Driver struct {
 	Endpoint                string
 	DisableSSL              bool
 	UserDataFile            string
-
-	spotInstanceRequestId string
+	SpotInstanceRequestId   string
 }
 
 type clientFactory interface {
@@ -648,6 +647,8 @@ func (d *Driver) innerCreate() error {
 				UserData:            &userdata,
 			},
 			InstanceCount: aws.Int64(1),
+			InstanceInterruptionBehavior: aws.String("stop"),
+			Type: aws.String("persistent"),
 			SpotPrice:     &d.SpotPrice,
 		}
 		if d.BlockDurationMinutes != 0 {
@@ -658,13 +659,13 @@ func (d *Driver) innerCreate() error {
 		if err != nil {
 			return fmt.Errorf("Error request spot instance: %s", err)
 		}
-		d.spotInstanceRequestId = *spotInstanceRequest.SpotInstanceRequests[0].SpotInstanceRequestId
+		d.SpotInstanceRequestId = *spotInstanceRequest.SpotInstanceRequests[0].SpotInstanceRequestId
 
 		log.Info("Waiting for spot instance...")
 		for i := 0; i < 3; i++ {
 			// AWS eventual consistency means we could not have SpotInstanceRequest ready yet
 			err = d.getClient().WaitUntilSpotInstanceRequestFulfilled(&ec2.DescribeSpotInstanceRequestsInput{
-				SpotInstanceRequestIds: []*string{&d.spotInstanceRequestId},
+				SpotInstanceRequestIds: []*string{&d.SpotInstanceRequestId},
 			})
 			if err != nil {
 				if awsErr, ok := err.(awserr.Error); ok {
@@ -677,7 +678,7 @@ func (d *Driver) innerCreate() error {
 			}
 			break
 		}
-		log.Infof("Created spot instance request %v", d.spotInstanceRequestId)
+		log.Infof("Created spot instance request %v", d.SpotInstanceRequestId)
 		// resolve instance id
 		for i := 0; i < 3; i++ {
 			// Even though the waiter succeeded, eventual consistency means we could
@@ -685,7 +686,7 @@ func (d *Driver) innerCreate() error {
 			// few times just in case
 			var resolvedSpotInstance *ec2.DescribeSpotInstanceRequestsOutput
 			resolvedSpotInstance, err = d.getClient().DescribeSpotInstanceRequests(&ec2.DescribeSpotInstanceRequestsInput{
-				SpotInstanceRequestIds: []*string{&d.spotInstanceRequestId},
+				SpotInstanceRequestIds: []*string{&d.SpotInstanceRequestId},
 			})
 			if err != nil {
 				// Unexpected; no need to retry
@@ -889,16 +890,17 @@ func (d *Driver) Remove() error {
 		Errs: []error{},
 	}
 
-	if err := d.terminate(); err != nil {
-		multierr.Errs = append(multierr.Errs, err)
-	}
-
 	// In case of failure waiting for a SpotInstance, we must cancel the unfulfilled request, otherwise an instance may be created later.
 	// If the instance was created, terminating it will be enough for canceling the SpotInstanceRequest
-	if d.RequestSpotInstance && d.spotInstanceRequestId != "" {
+	if d.RequestSpotInstance && d.SpotInstanceRequestId != "" {
+		log.Infof("canceling spot instance request %s", d.SpotInstanceRequestId)
 		if err := d.cancelSpotInstanceRequest(); err != nil {
 			multierr.Errs = append(multierr.Errs, err)
 		}
+	}
+
+	if err := d.terminate(); err != nil {
+		multierr.Errs = append(multierr.Errs, err)
 	}
 
 	if !d.ExistingKey {
@@ -917,7 +919,7 @@ func (d *Driver) Remove() error {
 func (d *Driver) cancelSpotInstanceRequest() error {
 	// NB: Canceling a Spot instance request does not terminate running Spot instances associated with the request
 	_, err := d.getClient().CancelSpotInstanceRequests(&ec2.CancelSpotInstanceRequestsInput{
-		SpotInstanceRequestIds: []*string{&d.spotInstanceRequestId},
+		SpotInstanceRequestIds: []*string{&d.SpotInstanceRequestId},
 	})
 
 	return err
@@ -1001,7 +1003,7 @@ func (d *Driver) terminate() error {
 		return nil
 	}
 
-	log.Debugf("terminating instance: %s", d.InstanceId)
+	log.Infof("terminating instance: %s", d.InstanceId)
 	_, err := d.getClient().TerminateInstances(&ec2.TerminateInstancesInput{
 		InstanceIds: []*string{&d.InstanceId},
 	})
@@ -1059,9 +1061,13 @@ func (d *Driver) configureTags(tagGroups string) error {
 			})
 		}
 	}
+	resources := []*string{&d.InstanceId}
 
+	if d.SpotInstanceRequestId != "" {
+		resources = append(resources, aws.String(d.SpotInstanceRequestId))
+	}
 	_, err := d.getClient().CreateTags(&ec2.CreateTagsInput{
-		Resources: []*string{&d.InstanceId},
+		Resources: resources,
 		Tags:      tags,
 	})
 
