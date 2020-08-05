@@ -42,7 +42,7 @@
   version = "v7.2.1"
 
 [[projects]]
-  digest = "1:82e2202f7660a888967c9b31dca6b682378be336af9440c3021eb5dae7c5fc0c"
+  digest = "1:9fc32b63f264822b7c03855dddff6f1b80a3e69bacd4021c96bd6089afb00580"
   name = "github.com/aws/aws-sdk-go"
   packages = [
     "aws",
@@ -75,43 +75,20 @@
     "private/protocol",
     "private/protocol/ec2query",
     "private/protocol/json/jsonutil",
+    "private/protocol/jsonrpc",
     "private/protocol/query",
     "private/protocol/query/queryutil",
     "private/protocol/rest",
     "private/protocol/xml/xmlutil",
     "service/ec2",
+    "service/pricing",
+    "service/ssm",
     "service/sts",
     "service/sts/stsiface",
   ]
   pruneopts = "UT"
   revision = "98a279965b6174326bd3fe3283cc534f2027b79d"
   version = "v1.33.3"
-
-[[projects]]
-  digest = "1:676da826460e2bef9b36b2b1fe93fc73c781937d2c70ca459e41c9f3277d2c55"
-  name = "github.com/bugsnag/bugsnag-go"
-  packages = [
-    ".",
-    "errors",
-  ]
-  pruneopts = "UT"
-  revision = "02e952891c52fbcb15f113d90633897355783b6e"
-
-[[projects]]
-  branch = "master"
-  digest = "1:3c8a443f16dd3c3639c7650c19af5b1a0686402f1949dafd18352d15239d9b05"
-  name = "github.com/bugsnag/osext"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "0dd3f918b21bec95ace9dc86c7e70266cfc5c702"
-
-[[projects]]
-  digest = "1:a99e9f7f0ef9aecfcfafc43152d4c928471ad16335b7141aa1347be6d76db1c2"
-  name = "github.com/bugsnag/panicwrap"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "aceac81c6e2f55f23844821679a0553b545e91df"
-  version = "1.1.0"
 
 [[projects]]
   digest = "1:f50c858ba1549c39fedde09546274f73991a1525870bd2ab575d35b956d2d246"
@@ -175,6 +152,14 @@
   version = "v0.9.23"
 
 [[projects]]
+  digest = "1:73770491417b7cb646b28610eec6481187aba7b5c3703da0d42f8d590d016f5f"
+  name = "github.com/gofrs/uuid"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "abfe1881e60ef34074c1b8d8c63b42565c356ed6"
+  version = "v3.3.0"
+
+[[projects]]
   digest = "1:922ab7a624d8398c8e986beefc25052b26e02a8ac6bba5dc507bda11adbd878b"
   name = "github.com/golang/protobuf"
   packages = ["proto"]
@@ -210,6 +195,22 @@
   packages = ["."]
   pruneopts = "UT"
   revision = "c2b33e84"
+
+[[projects]]
+  branch = "master"
+  digest = "1:f433da6fbabb0bd1bd730fd340782015c644123d02eb78c20c69ce03352daad1"
+  name = "github.com/kardianos/osext"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "2bc1f35cddc0cc527b4bc3dce8578fc2a6c11384"
+
+[[projects]]
+  digest = "1:5d231480e1c64a726869bc4142d270184c419749d34f167646baa21008eb0a79"
+  name = "github.com/mitchellh/go-homedir"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "af06845cf3004701891bf4fdb884bfe4920b3727"
+  version = "v1.1.0"
 
 [[projects]]
   digest = "1:481d1ca274189bb298947b76bb522b7e2ee494b7ca3206c705c008a02b5124cf"
@@ -445,12 +446,14 @@
     "github.com/aws/aws-sdk-go/aws/credentials",
     "github.com/aws/aws-sdk-go/aws/session",
     "github.com/aws/aws-sdk-go/service/ec2",
-    "github.com/bugsnag/bugsnag-go",
+    "github.com/aws/aws-sdk-go/service/pricing",
+    "github.com/aws/aws-sdk-go/service/ssm",
     "github.com/codegangsta/cli",
     "github.com/digitalocean/godo",
     "github.com/docker/docker/pkg/term",
     "github.com/exoscale/egoscale",
     "github.com/intel-go/cpuid",
+    "github.com/mitchellh/go-homedir",
     "github.com/rackspace/gophercloud",
     "github.com/rackspace/gophercloud/openstack",
     "github.com/rackspace/gophercloud/openstack/compute/v2/extensions/floatingip",

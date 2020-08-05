@@ -152,12 +152,6 @@ func main() {
 			Name:   "native-ssh",
 			Usage:  "Use the native (Go-based) SSH implementation.",
 		},
-		cli.StringFlag{
-			EnvVar: "MACHINE_BUGSNAG_API_TOKEN",
-			Name:   "bugsnag-api-token",
-			Usage:  "BugSnag API token for crash reporting",
-			Value:  "",
-		},
 	}
 
 	if err := app.Run(os.Args); err != nil {

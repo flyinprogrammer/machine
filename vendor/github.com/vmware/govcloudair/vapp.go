@@ -92,9 +92,9 @@ func (v *VApp) ComposeVApp(orgvdcnetwork OrgVDCNetwork, vapptemplate VAppTemplat
 			},
 			InstantiationParams: &types.InstantiationParams{
 				NetworkConnectionSection: &types.NetworkConnectionSection{
-					Type:                          vapptemplate.VAppTemplate.Children.VM[0].NetworkConnectionSection.Type,
-					HREF:                          vapptemplate.VAppTemplate.Children.VM[0].NetworkConnectionSection.HREF,
-					Info:                          "Network config for sourced item",
+					Type: vapptemplate.VAppTemplate.Children.VM[0].NetworkConnectionSection.Type,
+					HREF: vapptemplate.VAppTemplate.Children.VM[0].NetworkConnectionSection.HREF,
+					Info: "Network config for sourced item",
 					PrimaryNetworkConnectionIndex: vapptemplate.VAppTemplate.Children.VM[0].NetworkConnectionSection.PrimaryNetworkConnectionIndex,
 					NetworkConnection: &types.NetworkConnection{
 						Network:                 orgvdcnetwork.OrgVDCNetwork.Name,

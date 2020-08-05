@@ -337,7 +337,6 @@ _docker-machine() {
         '--tls-client-key[Private key used in client TLS auth]:file:_files' \
         '--github-api-token[Token to use for requests to the Github API]' \
         '--native-ssh[Use the native (Go-based) SSH implementation.]' \
-        '--bugsnag-api-token[BugSnag API token for crash reporting]' \
         '(- :)'{-v,--version}'[Print the version]' \
         "(-): :->command" \
         "(-)*:: :->option-or-argument" && ret=0

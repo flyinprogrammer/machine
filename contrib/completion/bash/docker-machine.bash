@@ -380,7 +380,7 @@ _docker_machine() {
     COMPREPLY=()
     local commands=(active config create env inspect ip kill ls mount provision regenerate-certs restart rm ssh scp start status stop upgrade url version help)
 
-    local flags=(--debug --native-ssh --github-api-token --bugsnag-api-token --help --version)
+    local flags=(--debug --native-ssh --github-api-token --help --version)
     local wants_dir=(--storage-path)
     local wants_file=(--tls-ca-cert --tls-ca-key --tls-client-cert --tls-client-key)
 
