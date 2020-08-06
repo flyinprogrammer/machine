@@ -848,6 +848,18 @@ func (d *Driver) innerCreate() error {
 		}
 	}
 
+	// TODO: RequestSpotLaunchSpecification doesn't support any kind of MetadataOptions block so instead of having
+	//    two different ways to do this, we can just have 1.
+	_, err := d.getEC2Client().ModifyInstanceMetadataOptions(&ec2.ModifyInstanceMetadataOptionsInput{
+		HttpEndpoint:            aws.String("enabled"),
+		HttpPutResponseHopLimit: aws.Int64(2),
+		HttpTokens:              aws.String("optional"),
+		InstanceId:              instance.InstanceId,
+	})
+	if err != nil {
+		return err
+	}
+
 	d.InstanceId = *instance.InstanceId
 
 	log.Debug("waiting for ip address to become available")
@@ -868,7 +880,7 @@ func (d *Driver) innerCreate() error {
 	)
 
 	log.Debug("Settings tags for instance")
-	err := d.configureTags(d.Tags)
+	err = d.configureTags(d.Tags)
 
 	if err != nil {
 		return fmt.Errorf("Unable to tag instance %s: %s", d.InstanceId, err)
