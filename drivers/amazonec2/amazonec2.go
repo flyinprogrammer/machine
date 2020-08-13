@@ -56,6 +56,7 @@ const (
 var (
 	dockerPort                           = 2376
 	swarmPort                            = 3376
+	errorNoUserEnv                       = errors.New("missing USER env and we require it for automation")
 	errorNoPrivateSSHKey                 = errors.New("using --amazonec2-keypair-name also requires --amazonec2-ssh-keypath")
 	errorMissingCredentials              = errors.New("amazonec2 driver requires AWS credentials configured with the --amazonec2-access-key and --amazonec2-secret-key options, environment variables, ~/.aws/credentials, or an instance role")
 	errorNoVPCIdFound                    = errors.New("amazonec2 driver requires either the --amazonec2-subnet-id or --amazonec2-vpc-id option or an AWS Account with a default vpc-id")
@@ -90,27 +91,27 @@ type Driver struct {
 	SecurityGroupNames []string
 
 	SecurityGroupManage   bool
-	OpenPorts               []string
-	Tags                    string
-	ReservationId           string
-	DeviceName              string
-	RootSize                int64
-	VolumeType              string
-	IamInstanceProfile      string
-	VpcId                   string
-	SubnetId                string
-	keyPath                 string
-	RequestOnDemandInstance bool
-	SpotPrice               string
-	BlockDurationMinutes    int64
-	UsePublicIp             bool
-	Monitoring              bool
-	SSHPrivateKeyPath       string
-	RetryCount              int
-	Endpoint                string
-	DisableSSL              bool
-	UserDataFile            string
-	SpotInstanceRequestId   string
+	OpenPorts             []string
+	Tags                  string
+	ReservationId         string
+	DeviceName            string
+	RootSize              int64
+	VolumeType            string
+	IamInstanceProfile    string
+	VpcId                 string
+	SubnetId              string
+	keyPath               string
+	RequestSpotInstance   bool
+	SpotPrice             string
+	BlockDurationMinutes  int64
+	UsePublicIp           bool
+	Monitoring            bool
+	SSHPrivateKeyPath     string
+	RetryCount            int
+	Endpoint              string
+	DisableSSL            bool
+	UserDataFile          string
+	SpotInstanceRequestId string
 	ssmParamterVPCId      string
 	ssmParamterSubnedId   string
 	runningIP             string
@@ -209,8 +210,8 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			EnvVar: "AWS_SSH_USER",
 		},
 		mcnflag.BoolFlag{
-			Name:  "amazonec2-request-ondemand-instance",
-			Usage: "Set this flag to request ondemand instance",
+			Name:  "amazonec2-request-spot-instance",
+			Usage: "Set this flag to request spot instance",
 		},
 		mcnflag.StringFlag{
 			Name:  "amazonec2-spot-price",
@@ -231,12 +232,12 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		},
 		mcnflag.StringFlag{
 			Name:   "amazonec2-ssh-keypath",
-			Usage:  "SSH Key for Instance",
+			Usage:  "File path to Private SSH Key to use with machine. The public key is expected to exist in the same place with .pub extension",
 			EnvVar: "AWS_SSH_KEYPATH",
 		},
 		mcnflag.StringFlag{
 			Name:   "amazonec2-keypair-name",
-			Usage:  "AWS keypair to use; requires --amazonec2-ssh-keypath",
+			Usage:  "AWS keypair name to use. Raw value is used when used in combination with --amazonec2-ssh-keypath, otherwise 'amazonec2-' prefix is always added to supplied value",
 			EnvVar: "AWS_KEYPAIR_NAME",
 		},
 		mcnflag.IntFlag{
@@ -364,7 +365,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 		return errorDisableSSLWithoutCustomEndpoint
 	}
 	d.AMI = flags.String("amazonec2-ami")
-	d.RequestOnDemandInstance = flags.Bool("amazonec2-request-ondemand-instance")
+	d.RequestSpotInstance = flags.Bool("amazonec2-request-spot-instance")
 	d.SpotPrice = flags.String("amazonec2-spot-price")
 	d.BlockDurationMinutes = int64(flags.Int("amazonec2-block-duration-minutes"))
 	d.InstanceType = flags.String("amazonec2-instance-type")
@@ -394,22 +395,33 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.UsePublicIp = flags.Bool("amazonec2-use-public-address")
 	d.Monitoring = flags.Bool("amazonec2-monitoring")
 	d.KeyName = flags.String("amazonec2-keypair-name")
-	if d.KeyName == "" {
-		user, ok := os.LookupEnv("USER")
-		if !ok {
-			return fmt.Errorf("we rely on the USER env if you don't set --amazonec2-keypair-name, and it's not set, pick one")
-		}
-		d.KeyName = user
-	}
 	d.SSHPrivateKeyPath = flags.String("amazonec2-ssh-keypath")
-	if d.SSHPrivateKeyPath == "" {
-		hdir, err := homedir.Dir()
-		if err != nil {
-			return fmt.Errorf("could not get home dir, %v", err)
+
+	if d.KeyName != "" && d.SSHPrivateKeyPath != "" {
+		log.Info("using raw values for KeyName and SSHPrivateKeyPath - good luck!")
+	} else {
+
+		// Always append our driver name to our keyname, and if we have no keyname, user our username
+		if d.KeyName != "" {
+			d.KeyName = fmt.Sprintf("%s-%s", driverName, d.KeyName)
+		} else {
+			user, userOk := os.LookupEnv("USER")
+			if !userOk {
+				return errorNoUserEnv
+			}
+			d.KeyName = fmt.Sprintf("%s-%s", driverName, user)
 		}
-		d.SSHPrivateKeyPath = filepath.Join(hdir, ".ssh", fmt.Sprintf("amazonec2-%s", d.KeyName))
-		log.Infof("using generated SSHPrivateKeyPath %s", d.SSHPrivateKeyPath)
+
+		// if we don't specify a key to use, use our keyname.
+		if d.SSHPrivateKeyPath == "" {
+			hdir, err := homedir.Dir()
+			if err != nil {
+				return fmt.Errorf("could not get home dir, %v", err)
+			}
+			d.SSHPrivateKeyPath = filepath.Join(hdir, ".ssh", d.KeyName)
+		}
 	}
+
 	d.RetryCount = flags.Int("amazonec2-retries")
 	d.OpenPorts = flags.StringSlice("amazonec2-open-port")
 	d.UserDataFile = flags.String("amazonec2-userdata")
@@ -496,7 +508,7 @@ func (d *Driver) checkPrereqs() error {
 		log.Infof("using AMI ID %s", d.AMI)
 	}
 
-	if !d.RequestOnDemandInstance && d.SpotPrice == "" {
+	if d.RequestSpotInstance && d.SpotPrice == "" {
 		input := &pricing.GetProductsInput{
 			Filters: []*pricing.Filter{
 				&pricing.Filter{
@@ -747,27 +759,7 @@ func (d *Driver) innerCreate() error {
 
 	var instance *ec2.Instance
 
-	if d.RequestOnDemandInstance {
-		inst, err := d.getEC2Client().RunInstances(&ec2.RunInstancesInput{
-			ImageId:           &d.AMI,
-			MinCount:          aws.Int64(1),
-			MaxCount:          aws.Int64(1),
-			KeyName:           &d.KeyName,
-			InstanceType:      &d.InstanceType,
-			NetworkInterfaces: netSpecs,
-			Monitoring:        &ec2.RunInstancesMonitoringEnabled{Enabled: aws.Bool(d.Monitoring)},
-			IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
-				Name: &d.IamInstanceProfile,
-			},
-			BlockDeviceMappings: []*ec2.BlockDeviceMapping{bdm},
-			UserData:            &userdata,
-		})
-
-		if err != nil {
-			return fmt.Errorf("Error launching instance: %s", err)
-		}
-		instance = inst.Instances[0]
-	} else {
+	if d.RequestSpotInstance {
 		req := ec2.RequestSpotInstancesInput{
 			LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
 				ImageId:           &d.AMI,
@@ -846,11 +838,41 @@ func (d *Driver) innerCreate() error {
 		if err != nil {
 			return fmt.Errorf("Error resolving spot instance to real instance: %v", err)
 		}
+	} else {
+		inst, err := d.getEC2Client().RunInstances(&ec2.RunInstancesInput{
+			ImageId:           &d.AMI,
+			MinCount:          aws.Int64(1),
+			MaxCount:          aws.Int64(1),
+			KeyName:           &d.KeyName,
+			InstanceType:      &d.InstanceType,
+			NetworkInterfaces: netSpecs,
+			Monitoring:        &ec2.RunInstancesMonitoringEnabled{Enabled: aws.Bool(d.Monitoring)},
+			IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
+				Name: &d.IamInstanceProfile,
+			},
+			BlockDeviceMappings: []*ec2.BlockDeviceMapping{bdm},
+			UserData:            &userdata,
+		})
+
+		if err != nil {
+			return fmt.Errorf("Error launching instance: %s", err)
+		}
+		instance = inst.Instances[0]
 	}
+	// Do this first so we can start bookkeeping
+	d.InstanceId = *instance.InstanceId
+
+	log.Debug("Settings tags for instance")
+	err := d.configureTags(d.Tags)
+	if err != nil {
+		return fmt.Errorf("Unable to tag instance %s: %s", d.InstanceId, err)
+	}
+
+	d.waitForInstance()
 
 	// TODO: RequestSpotLaunchSpecification doesn't support any kind of MetadataOptions block so instead of having
 	//    two different ways to do this, we can just have 1.
-	_, err := d.getEC2Client().ModifyInstanceMetadataOptions(&ec2.ModifyInstanceMetadataOptionsInput{
+	_, err = d.getEC2Client().ModifyInstanceMetadataOptions(&ec2.ModifyInstanceMetadataOptionsInput{
 		HttpEndpoint:            aws.String("enabled"),
 		HttpPutResponseHopLimit: aws.Int64(2),
 		HttpTokens:              aws.String("optional"),
@@ -859,8 +881,6 @@ func (d *Driver) innerCreate() error {
 	if err != nil {
 		return err
 	}
-
-	d.InstanceId = *instance.InstanceId
 
 	log.Debug("waiting for ip address to become available")
 	if err := mcnutils.WaitFor(d.instanceIpAvailable); err != nil {
@@ -871,20 +891,11 @@ func (d *Driver) innerCreate() error {
 		d.PrivateIPAddress = *instance.PrivateIpAddress
 	}
 
-	d.waitForInstance()
-
 	log.Debugf("created instance ID %s, IP address %s, Private IP address %s",
 		d.InstanceId,
 		d.IPAddress,
 		d.PrivateIPAddress,
 	)
-
-	log.Debug("Settings tags for instance")
-	err = d.configureTags(d.Tags)
-
-	if err != nil {
-		return fmt.Errorf("Unable to tag instance %s: %s", d.InstanceId, err)
-	}
 
 	return nil
 }
